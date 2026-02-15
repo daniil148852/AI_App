@@ -13,6 +13,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Accessibility
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -271,21 +276,21 @@ private fun PermissionSetupDialog(
                     title = "Служба спец. возможностей",
                     description = "Для управления приложениями",
                     isGranted = isAccessibilityEnabled,
-                    icon = Icons.Filled.Accessibility, // Исправлен импорт в начале файла
+                    icon = Icons.Filled.Accessibility,
                     onRequest = onRequestAccessibility
                 )
                 PermissionCard(
                     title = "Микрофон",
                     description = "Для голосовых команд",
                     isGranted = hasMicPermission,
-                    icon = Icons.Filled.Mic, // Исправлен импорт
+                    icon = Icons.Filled.Mic,
                     onRequest = onRequestMic
                 )
                 PermissionCard(
                     title = "API ключ Groq",
                     description = if (hasApiKey) "Настроен" else "Укажите в настройках",
                     isGranted = hasApiKey,
-                    icon = Icons.Filled.Key, // Исправлен импорт
+                    icon = Icons.Filled.Key,
                     onRequest = { }
                 )
             }
@@ -347,7 +352,7 @@ private fun RestrictedSettingsDialog(
                     Text("Открыть настройки приложения")
                 }
                 OutlinedButton(onClick = onOpenAccessibility, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Accessibility, null, Modifier.size(18.dp)) // Исправлен импорт
+                    Icon(Icons.Filled.Accessibility, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Включить службу")
                 }
