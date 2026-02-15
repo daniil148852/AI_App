@@ -1,4 +1,4 @@
-pluginManagement {
+dependencyResolution {
     repositories {
         google()
         mavenCentral()
@@ -6,7 +6,7 @@ pluginManagement {
     }
 }
 
-dependencyResolution {
+dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
@@ -16,3 +16,4 @@ dependencyResolution {
 
 rootProject.name = "AI-Phone-Assistant"
 include(":app")
+
