@@ -2,7 +2,6 @@ package com.ai.assistant.ui.screens.settings
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -10,7 +9,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
@@ -68,7 +66,6 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.primary
             )
 
-            // API Key
             OutlinedTextField(
                 value = apiKeyInput,
                 onValueChange = { apiKeyInput = it },
@@ -80,7 +77,8 @@ fun SettingsScreen(
                     Row {
                         IconButton(onClick = { showApiKey = !showApiKey }) {
                             Icon(
-                                if (showApiKey) Icons.Filled.VisibilityOff else Icons.Filled.Visibility,
+                                if (showApiKey) Icons.Filled.VisibilityOff
+                                else Icons.Filled.Visibility,
                                 contentDescription = "Toggle visibility"
                             )
                         }
@@ -98,7 +96,6 @@ fun SettingsScreen(
                 singleLine = true
             )
 
-            // Model picker
             OutlinedCard(
                 onClick = { showModelPicker = true },
                 modifier = Modifier.fillMaxWidth()
@@ -124,7 +121,7 @@ fun SettingsScreen(
                 }
             }
 
-            HorizontalDivider()
+            Divider()
 
             // ═══════════════════ Voice Settings ═══════════════════
             Text(
@@ -194,7 +191,7 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider()
+            Divider()
 
             // ═══════════════════ Execution Settings ═══════════════════
             Text(
@@ -203,7 +200,6 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.primary
             )
 
-            // Auto execute
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
@@ -222,7 +218,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Max steps
             Column {
                 Text(
                     "Максимум шагов: ${settings.maxStepsPerCommand}",
@@ -241,7 +236,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Action delay
             Column {
                 Text(
                     "Задержка между действиями: ${settings.actionDelayMs}мс",
@@ -260,7 +254,7 @@ fun SettingsScreen(
                 )
             }
 
-            HorizontalDivider()
+            Divider()
 
             // ═══════════════════ Debug ═══════════════════
             Text(
@@ -274,7 +268,10 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text("Показывать debug-информацию", style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        "Показывать debug-информацию",
+                        style = MaterialTheme.typography.titleSmall
+                    )
                     Text(
                         "Рассуждения AI, дерево экрана",
                         style = MaterialTheme.typography.bodySmall,
@@ -307,7 +304,6 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(32.dp))
 
-            // App info
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
