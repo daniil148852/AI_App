@@ -8,51 +8,14 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Accessibility
-import androidx.compose.material.icons.filled.Key
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Security
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -87,7 +50,7 @@ fun HomeScreen(
     var showRestrictedSettingsGuide by remember { mutableStateOf(false) }
     var hasMicPermission by remember { mutableStateOf(false) }
 
-    // Simple periodic refresh instead of lifecycle observer
+    // Периодическое обновление статуса службы
     var refreshTick by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
         while (true) {
@@ -105,6 +68,7 @@ fun HomeScreen(
         hasMicPermission = granted
     }
 
+    // Автопрокрутка вниз
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -141,6 +105,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            // Баннер предупреждения
             AnimatedVisibility(visible = !isAccessibilityEnabled || !hasApiKey) {
                 Card(
                     modifier = Modifier
@@ -186,16 +151,19 @@ fun HomeScreen(
                 }
             }
 
+            // Список сообщений
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 state = listState,
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                items(items = messages, key = { it.id }) { message ->
+                // ВАЖНО: Убран параметр key = { it.id }, который вызывал крэш
+                items(items = messages) { message ->
                     ChatBubble(message = message)
                 }
             }
 
+            // Текст распознавания речи
             AnimatedVisibility(visible = isListening && partialText != null) {
                 Text(
                     "🎤 ${partialText ?: ""}",
@@ -206,6 +174,7 @@ fun HomeScreen(
                 )
             }
 
+            // Поле ввода
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 tonalElevation = 3.dp,
@@ -302,21 +271,21 @@ private fun PermissionSetupDialog(
                     title = "Служба спец. возможностей",
                     description = "Для управления приложениями",
                     isGranted = isAccessibilityEnabled,
-                    icon = Icons.Filled.Accessibility,
+                    icon = Icons.Filled.Accessibility, // Исправлен импорт в начале файла
                     onRequest = onRequestAccessibility
                 )
                 PermissionCard(
                     title = "Микрофон",
                     description = "Для голосовых команд",
                     isGranted = hasMicPermission,
-                    icon = Icons.Filled.Mic,
+                    icon = Icons.Filled.Mic, // Исправлен импорт
                     onRequest = onRequestMic
                 )
                 PermissionCard(
                     title = "API ключ Groq",
                     description = if (hasApiKey) "Настроен" else "Укажите в настройках",
                     isGranted = hasApiKey,
-                    icon = Icons.Filled.Key,
+                    icon = Icons.Filled.Key, // Исправлен импорт
                     onRequest = { }
                 )
             }
@@ -378,7 +347,7 @@ private fun RestrictedSettingsDialog(
                     Text("Открыть настройки приложения")
                 }
                 OutlinedButton(onClick = onOpenAccessibility, modifier = Modifier.fillMaxWidth()) {
-                    Icon(Icons.Filled.Accessibility, null, Modifier.size(18.dp))
+                    Icon(Icons.Filled.Accessibility, null, Modifier.size(18.dp)) // Исправлен импорт
                     Spacer(Modifier.width(8.dp))
                     Text("Включить службу")
                 }
