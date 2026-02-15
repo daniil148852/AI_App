@@ -1,111 +1,180 @@
 package com.ai.assistant.service
 
+import android.graphics.Rect
+import android.util.Log
 import android.view.accessibility.AccessibilityNodeInfo
 import com.ai.assistant.domain.model.ScreenNode
-import android.graphics.Rect
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Analyzes the current screen by reading the AccessibilityNodeInfo tree.
- * Converts the Android accessibility tree into our ScreenNode model
- * that can be serialized and sent to the AI.
- */
 @Singleton
 class ScreenAnalyzer @Inject constructor() {
 
+    companion object {
+        private const val TAG = "ScreenAnalyzer"
+        private const val MAX_DEPTH = 12
+        private const val MAX_NODES = 500
+    }
+
     private var nodeCounter = 0
 
-    /**
-     * Called by the AccessibilityService to provide the root node.
-     */
     fun captureCurrentScreen(): ScreenNode? {
-        val service = AssistantAccessibilityService.instance ?: return null
-        val rootNode = service.rootInActiveWindow ?: return null
+        val service = AssistantAccessibilityService.instance
+        if (service == null) {
+            Log.w(TAG, "Accessibility service not running")
+            return null
+        }
+
+        val rootNode = try {
+            service.rootInActiveWindow
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to get root node", e)
+            return null
+        }
+
+        if (rootNode == null) {
+            Log.w(TAG, "Root node is null")
+            return null
+        }
 
         nodeCounter = 0
         return try {
-            parseNode(rootNode)
+            parseNode(rootNode, 0)
         } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse screen", e)
             null
         } finally {
-            rootNode.recycle()
+            try {
+                rootNode.recycle()
+            } catch (e: Exception) {
+                // ignore
+            }
         }
     }
 
     fun getCurrentPackageName(): String? {
-        return AssistantAccessibilityService.instance?.currentPackageName
+        return try {
+            AssistantAccessibilityService.instance?.currentPackageName
+        } catch (e: Exception) {
+            null
+        }
     }
 
-    /**
-     * Get the raw AccessibilityNodeInfo root (for ActionExecutor).
-     */
-    fun getRootNode(): AccessibilityNodeInfo? {
-        return AssistantAccessibilityService.instance?.rootInActiveWindow
-    }
-
-    private fun parseNode(node: AccessibilityNodeInfo, depth: Int = 0): ScreenNode {
+    private fun parseNode(node: AccessibilityNodeInfo, depth: Int): ScreenNode {
         val bounds = Rect()
-        node.getBoundsInScreen(bounds)
+        try {
+            node.getBoundsInScreen(bounds)
+        } catch (e: Exception) {
+            // use default empty bounds
+        }
 
         val currentIndex = nodeCounter++
 
         val children = mutableListOf<ScreenNode>()
-        if (depth < 15) { // Prevent stack overflow on deep trees
-            for (i in 0 until node.childCount) {
-                val child = node.getChild(i) ?: continue
+
+        if (depth < MAX_DEPTH && nodeCounter < MAX_NODES) {
+            val childCount = try {
+                node.childCount
+            } catch (e: Exception) {
+                0
+            }
+
+            for (i in 0 until childCount) {
+                if (nodeCounter >= MAX_NODES) break
+
+                val child = try {
+                    node.getChild(i)
+                } catch (e: Exception) {
+                    null
+                } ?: continue
+
                 try {
-                    // Skip invisible/empty nodes to reduce token count
                     if (isNodeRelevant(child)) {
                         children.add(parseNode(child, depth + 1))
                     } else {
-                        // Still recurse into children even if this node isn't interesting
-                        for (j in 0 until child.childCount) {
-                            val grandchild = child.getChild(j) ?: continue
+                        // Check grandchildren
+                        val grandChildCount = try {
+                            child.childCount
+                        } catch (e: Exception) {
+                            0
+                        }
+
+                        for (j in 0 until grandChildCount) {
+                            if (nodeCounter >= MAX_NODES) break
+
+                            val grandchild = try {
+                                child.getChild(j)
+                            } catch (e: Exception) {
+                                null
+                            } ?: continue
+
                             try {
                                 if (isNodeRelevant(grandchild)) {
-                                    children.add(parseNode(grandchild, depth + 1))
+                                    children.add(
+                                        parseNode(grandchild, depth + 1)
+                                    )
                                 }
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Error parsing grandchild", e)
                             } finally {
-                                grandchild.recycle()
+                                try {
+                                    grandchild.recycle()
+                                } catch (e: Exception) { }
                             }
                         }
                     }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Error processing child $i", e)
                 } finally {
-                    child.recycle()
+                    try {
+                        child.recycle()
+                    } catch (e: Exception) { }
                 }
             }
         }
 
         return ScreenNode(
             id = currentIndex.toString(),
-            className = node.className?.toString(),
-            text = node.text?.toString()?.take(100), // Limit text length
-            contentDescription = node.contentDescription?.toString()?.take(100),
-            viewIdResourceName = node.viewIdResourceName,
-            isClickable = node.isClickable,
-            isScrollable = node.isScrollable,
-            isEditable = node.isEditable,
-            isCheckable = node.isCheckable,
-            isChecked = node.isChecked,
-            isFocusable = node.isFocusable,
-            isEnabled = node.isEnabled,
-            boundsInScreen = ScreenNode.Bounds(bounds.left, bounds.top, bounds.right, bounds.bottom),
+            className = try { node.className?.toString() } catch (e: Exception) { null },
+            text = try {
+                node.text?.toString()?.take(100)
+            } catch (e: Exception) { null },
+            contentDescription = try {
+                node.contentDescription?.toString()?.take(100)
+            } catch (e: Exception) { null },
+            viewIdResourceName = try {
+                node.viewIdResourceName
+            } catch (e: Exception) { null },
+            isClickable = try { node.isClickable } catch (e: Exception) { false },
+            isScrollable = try { node.isScrollable } catch (e: Exception) { false },
+            isEditable = try { node.isEditable } catch (e: Exception) { false },
+            isCheckable = try { node.isCheckable } catch (e: Exception) { false },
+            isChecked = try { node.isChecked } catch (e: Exception) { false },
+            isFocusable = try { node.isFocusable } catch (e: Exception) { false },
+            isEnabled = try { node.isEnabled } catch (e: Exception) { true },
+            boundsInScreen = ScreenNode.Bounds(
+                bounds.left, bounds.top, bounds.right, bounds.bottom
+            ),
             children = children,
-            packageName = node.packageName?.toString(),
+            packageName = try {
+                node.packageName?.toString()
+            } catch (e: Exception) { null },
             index = currentIndex
         )
     }
 
     private fun isNodeRelevant(node: AccessibilityNodeInfo): Boolean {
-        // A node is relevant if it has text, is interactive, or has a content description
-        return node.text?.isNotBlank() == true ||
-                node.contentDescription?.isNotBlank() == true ||
-                node.isClickable ||
-                node.isScrollable ||
-                node.isEditable ||
-                node.isCheckable ||
-                node.viewIdResourceName != null ||
-                node.childCount > 0
+        return try {
+            node.text?.isNotBlank() == true ||
+                    node.contentDescription?.isNotBlank() == true ||
+                    node.isClickable ||
+                    node.isScrollable ||
+                    node.isEditable ||
+                    node.isCheckable ||
+                    node.viewIdResourceName != null ||
+                    node.childCount > 0
+        } catch (e: Exception) {
+            false
+        }
     }
 }
