@@ -49,6 +49,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -65,6 +66,7 @@ import com.ai.assistant.ui.components.ChatBubble
 import com.ai.assistant.ui.components.CommandInput
 import com.ai.assistant.ui.components.PermissionCard
 import com.ai.assistant.ui.components.StatusIndicator
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +87,18 @@ fun HomeScreen(
     var showRestrictedSettingsGuide by remember { mutableStateOf(false) }
     var hasMicPermission by remember { mutableStateOf(false) }
 
+    // Simple periodic refresh instead of lifecycle observer
+    var refreshTick by remember { mutableIntStateOf(0) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(2000)
+            refreshTick++
+        }
+    }
+    LaunchedEffect(refreshTick) {
+        viewModel.refreshServiceStatus()
+    }
+
     val micPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
@@ -104,10 +118,7 @@ fun HomeScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(
-                            "AI Assistant",
-                            style = MaterialTheme.typography.titleLarge
-                        )
+                        Text("AI Assistant", style = MaterialTheme.typography.titleLarge)
                         StatusIndicator(status = serviceStatus)
                     }
                 },
@@ -115,16 +126,9 @@ fun HomeScreen(
                     if (!isAccessibilityEnabled || !hasApiKey) {
                         IconButton(onClick = { showPermissionDialog = true }) {
                             BadgedBox(
-                                badge = {
-                                    Badge(
-                                        containerColor = MaterialTheme.colorScheme.error
-                                    )
-                                }
+                                badge = { Badge(containerColor = MaterialTheme.colorScheme.error) }
                             ) {
-                                Icon(
-                                    Icons.Filled.Warning,
-                                    contentDescription = "Setup required"
-                                )
+                                Icon(Icons.Filled.Warning, contentDescription = "Setup")
                             }
                         }
                     }
@@ -137,10 +141,7 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
-            // Warning banner
-            AnimatedVisibility(
-                visible = !isAccessibilityEnabled || !hasApiKey
-            ) {
+            AnimatedVisibility(visible = !isAccessibilityEnabled || !hasApiKey) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -154,24 +155,22 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Icon(
-                            Icons.Filled.Warning,
-                            contentDescription = null,
+                            Icons.Filled.Warning, null,
                             tint = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Spacer(Modifier.width(12.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
-                                text = if (!hasApiKey) "Нужен API ключ Groq"
-                                else "Нужна служба специальных возможностей",
+                                if (!hasApiKey) "Нужен API ключ Groq"
+                                else "Нужна служба спец. возможностей",
                                 style = MaterialTheme.typography.titleSmall,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
                             Text(
-                                text = if (!hasApiKey) "Укажите ключ в настройках"
+                                if (!hasApiKey) "Укажите ключ в настройках"
                                 else "Нажмите для настройки",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                                    .copy(alpha = 0.7f)
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
                             )
                         }
                         TextButton(onClick = {
@@ -187,38 +186,26 @@ fun HomeScreen(
                 }
             }
 
-            // Chat messages
             LazyColumn(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth(),
+                modifier = Modifier.weight(1f).fillMaxWidth(),
                 state = listState,
                 contentPadding = PaddingValues(vertical = 8.dp)
             ) {
-                items(
-                    items = messages,
-                    key = { it.id }
-                ) { message ->
+                items(items = messages, key = { it.id }) { message ->
                     ChatBubble(message = message)
                 }
             }
 
-            // Partial recognition text
-            AnimatedVisibility(
-                visible = isListening && partialText != null
-            ) {
+            AnimatedVisibility(visible = isListening && partialText != null) {
                 Text(
-                    text = "🎤 ${partialText ?: ""}",
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    "🎤 ${partialText ?: ""}",
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.primary,
                     textAlign = TextAlign.Center
                 )
             }
 
-            // Input area
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 tonalElevation = 3.dp,
@@ -237,20 +224,15 @@ fun HomeScreen(
                         onSend = viewModel::sendCommand,
                         isProcessing = isProcessing,
                         modifier = Modifier.weight(1f),
-                        placeholder = if (isListening) "Слушаю..."
-                        else "Введите команду..."
+                        placeholder = if (isListening) "Слушаю..." else "Введите команду..."
                     )
-
                     Spacer(modifier = Modifier.width(8.dp))
-
                     AnimatedMicButton(
                         isListening = isListening,
                         isProcessing = isProcessing,
                         onClick = {
                             if (!hasMicPermission) {
-                                micPermissionLauncher.launch(
-                                    Manifest.permission.RECORD_AUDIO
-                                )
+                                micPermissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             } else {
                                 viewModel.toggleVoice()
                             }
@@ -261,7 +243,6 @@ fun HomeScreen(
         }
     }
 
-    // Permission setup dialog
     if (showPermissionDialog) {
         PermissionSetupDialog(
             isAccessibilityEnabled = isAccessibilityEnabled,
@@ -284,7 +265,6 @@ fun HomeScreen(
         )
     }
 
-    // Restricted Settings Guide (Android 13+)
     if (showRestrictedSettingsGuide) {
         RestrictedSettingsDialog(
             onDismiss = { showRestrictedSettingsGuide = false },
@@ -319,7 +299,7 @@ private fun PermissionSetupDialog(
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 PermissionCard(
-                    title = "Служба специальных возможностей",
+                    title = "Служба спец. возможностей",
                     description = "Для управления приложениями",
                     isGranted = isAccessibilityEnabled,
                     icon = Icons.Filled.Accessibility,
@@ -334,8 +314,7 @@ private fun PermissionSetupDialog(
                 )
                 PermissionCard(
                     title = "API ключ Groq",
-                    description = if (hasApiKey) "Настроен"
-                    else "Не настроен — укажите в настройках",
+                    description = if (hasApiKey) "Настроен" else "Укажите в настройках",
                     isGranted = hasApiKey,
                     icon = Icons.Filled.Key,
                     onRequest = { }
@@ -343,9 +322,7 @@ private fun PermissionSetupDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Готово")
-            }
+            TextButton(onClick = onDismiss) { Text("Готово") }
         }
     )
 }
@@ -360,42 +337,32 @@ private fun RestrictedSettingsDialog(
         onDismissRequest = onDismiss,
         icon = {
             Icon(
-                Icons.Filled.Security,
-                contentDescription = null,
+                Icons.Filled.Security, null,
                 modifier = Modifier.size(48.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
         },
-        title = {
-            Text(
-                "Разрешение ограниченных настроек",
-                textAlign = TextAlign.Center
-            )
-        },
+        title = { Text("Ограниченные настройки", textAlign = TextAlign.Center) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 Text(
-                    "Android 13+ блокирует службу специальных возможностей " +
-                            "для приложений, установленных не из магазина. " +
-                            "Нужно сначала снять ограничение:",
+                    "Android 13+ блокирует службу для приложений не из магазина.",
                     style = MaterialTheme.typography.bodyMedium
                 )
-
                 Card(
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme
-                            .primaryContainer.copy(alpha = 0.5f)
+                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                     )
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        StepItem(1, "Нажмите кнопку \"Открыть настройки\" ниже")
-                        StepItem(2, "Нажмите ⋮ (три точки) в правом верхнем углу")
-                        StepItem(3, "Выберите \"Разрешить ограниченные настройки\"")
-                        StepItem(4, "Подтвердите отпечатком / PIN-кодом")
-                        StepItem(5, "Вернитесь и нажмите \"Включить службу\"")
+                        StepItem(1, "Нажмите \"Открыть настройки\" ниже")
+                        StepItem(2, "Нажмите ⋮ справа вверху")
+                        StepItem(3, "\"Разрешить ограниченные настройки\"")
+                        StepItem(4, "Подтвердите PIN / отпечатком")
+                        StepItem(5, "Вернитесь → \"Включить службу\"")
                     }
                 }
             }
@@ -405,36 +372,17 @@ private fun RestrictedSettingsDialog(
                 modifier = Modifier.fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Button(
-                    onClick = onOpenAppSettings,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        Icons.Filled.Settings,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
+                Button(onClick = onOpenAppSettings, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Settings, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Шаг 1: Открыть настройки приложения")
+                    Text("Открыть настройки приложения")
                 }
-
-                OutlinedButton(
-                    onClick = onOpenAccessibility,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Icon(
-                        Icons.Filled.Accessibility,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
+                OutlinedButton(onClick = onOpenAccessibility, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Filled.Accessibility, null, Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
-                    Text("Шаг 5: Включить службу")
+                    Text("Включить службу")
                 }
-
-                TextButton(
-                    onClick = onDismiss,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                TextButton(onClick = onDismiss, modifier = Modifier.fillMaxWidth()) {
                     Text("Закрыть")
                 }
             }
@@ -460,10 +408,6 @@ private fun StepItem(step: Int, text: String) {
             }
         }
         Spacer(Modifier.width(12.dp))
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.weight(1f)
-        )
+        Text(text, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
     }
 }
