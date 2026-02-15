@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 
 @HiltViewModel
@@ -44,6 +45,7 @@ class HomeViewModel @Inject constructor(
 
     companion object {
         private const val TAG = "HomeViewModel"
+        private val idGenerator = AtomicLong(System.currentTimeMillis())
 
         fun isAccessibilityServiceEnabled(
             context: Context,
@@ -92,13 +94,11 @@ class HomeViewModel @Inject constructor(
     private val conversationHistory = mutableListOf<Pair<String, String>>()
 
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
-    private var messageIdCounter = 0L
 
     init {
         viewModelScope.launch {
             try {
                 AssistantAccessibilityService.isRunning.collect { running ->
-                    Log.d(TAG, "Accessibility service running: $running")
                     if (!_isProcessing.value) {
                         _serviceStatus.value = if (running) {
                             ServiceStatus.CONNECTED
@@ -154,7 +154,6 @@ class HomeViewModel @Inject constructor(
         _textInput.value = text
     }
 
-    // Метод, который вызывается из UI для обновления статуса
     fun refreshServiceStatus() {
         val enabled = isAccessibilityEnabled()
         if (!_isProcessing.value) {
@@ -331,6 +330,22 @@ class HomeViewModel @Inject constructor(
                                 )
                             }
 
+                            if (plan.actions.isEmpty()) {
+                                Log.w(TAG, "Empty actions from AI")
+                                isComplete = true
+                                removeLastActionMessage()
+                                addMessage(
+                                    ChatMessage(
+                                        text = "⚠️ AI не вернул действий. Попробуйте переформулировать.",
+                                        isUser = false,
+                                        isAction = true,
+                                        actionStatus = ActionStatus.FAILED,
+                                        timestamp = getCurrentTime()
+                                    )
+                                )
+                                return@fold
+                            }
+
                             val results = try {
                                 executeActionPlanUseCase(plan, settings.actionDelayMs)
                             } catch (e: CancellationException) {
@@ -411,12 +426,9 @@ class HomeViewModel @Inject constructor(
                             removeLastActionMessage()
 
                             val errorMsg = when {
-                                lastError!!.contains("401") ->
-                                    "❌ Неверный API ключ."
-                                lastError!!.contains("429") ->
-                                    "❌ Лимит запросов."
-                                else ->
-                                    "❌ Ошибка: $lastError"
+                                lastError!!.contains("401") -> "❌ Неверный API ключ."
+                                lastError!!.contains("429") -> "❌ Лимит запросов."
+                                else -> "❌ Ошибка: $lastError"
                             }
 
                             addMessage(
@@ -467,8 +479,9 @@ class HomeViewModel @Inject constructor(
     }
 
     private fun addMessage(message: ChatMessage) {
-        messageIdCounter++
-        _messages.value = _messages.value + message
+        // Гарантируем уникальный ID
+        val uniqueMsg = message.copy(id = idGenerator.incrementAndGet())
+        _messages.value = _messages.value + uniqueMsg
     }
 
     private fun removeLastActionMessage() {
@@ -484,6 +497,7 @@ class HomeViewModel @Inject constructor(
         val current = _messages.value.toMutableList()
         val lastActionIndex = current.indexOfLast { it.isAction && !it.isUser }
         if (lastActionIndex >= 0) {
+            // Сохраняем ID, чтобы LazyColumn не перерисовывал весь список
             current[lastActionIndex] = current[lastActionIndex].copy(
                 text = newText,
                 actionStatus = status
