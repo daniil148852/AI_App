@@ -1,5 +1,9 @@
 package com.ai.assistant.ui.screens.settings
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -66,6 +70,7 @@ fun SettingsScreen(
     var showModelPicker by remember { mutableStateOf(false) }
     var showCrashLog by remember { mutableStateOf(false) }
     var crashLogText by remember { mutableStateOf("") }
+    var showLanguagePicker by remember { mutableStateOf(false) }
 
     val availableModels = listOf(
         "llama-3.3-70b-versatile" to "LLaMA 3.3 70B (рекомендуется)",
@@ -99,7 +104,6 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // API Settings
             Text(
                 "API Настройки",
                 style = MaterialTheme.typography.titleMedium,
@@ -119,7 +123,7 @@ fun SettingsScreen(
                             Icon(
                                 if (showApiKey) Icons.Filled.VisibilityOff
                                 else Icons.Filled.Visibility,
-                                contentDescription = "Toggle visibility"
+                                contentDescription = "Toggle"
                             )
                         }
                         IconButton(
@@ -139,9 +143,7 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Filled.Psychology, contentDescription = null)
@@ -161,23 +163,18 @@ fun SettingsScreen(
 
             Divider()
 
-            // Voice
             Text(
                 "Голос",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.primary
             )
 
-            var showLanguagePicker by remember { mutableStateOf(false) }
-
             OutlinedCard(
                 onClick = { showLanguagePicker = true },
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(Icons.Filled.Language, contentDescription = null)
@@ -195,43 +192,8 @@ fun SettingsScreen(
                 }
             }
 
-            if (showLanguagePicker) {
-                AlertDialog(
-                    onDismissRequest = { showLanguagePicker = false },
-                    title = { Text("Язык") },
-                    text = {
-                        Column {
-                            languages.forEach { (code, name) ->
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 4.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    RadioButton(
-                                        selected = settings.voiceLanguage == code,
-                                        onClick = {
-                                            viewModel.updateVoiceLanguage(code)
-                                            showLanguagePicker = false
-                                        }
-                                    )
-                                    Spacer(Modifier.width(8.dp))
-                                    Text(name)
-                                }
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        TextButton(onClick = { showLanguagePicker = false }) {
-                            Text("Закрыть")
-                        }
-                    }
-                )
-            }
-
             Divider()
 
-            // Execution
             Text(
                 "Выполнение",
                 style = MaterialTheme.typography.titleMedium,
@@ -245,7 +207,7 @@ fun SettingsScreen(
                 Column(Modifier.weight(1f)) {
                     Text("Автовыполнение", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Выполнять команды без подтверждения",
+                        "Выполнять без подтверждения",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -284,7 +246,6 @@ fun SettingsScreen(
 
             Divider()
 
-            // Debug
             Text(
                 "Отладка",
                 style = MaterialTheme.typography.titleMedium,
@@ -322,7 +283,6 @@ fun SettingsScreen(
                 )
             }
 
-            // Crash log viewer
             OutlinedCard(
                 onClick = {
                     crashLogText = try {
@@ -340,29 +300,20 @@ fun SettingsScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        Icons.Filled.BugReport,
-                        contentDescription = null,
-                        tint = ErrorRed
-                    )
+                    Icon(Icons.Filled.BugReport, null, tint = ErrorRed)
                     Spacer(Modifier.width(16.dp))
                     Column(Modifier.weight(1f)) {
+                        Text("Крэш-логи", style = MaterialTheme.typography.titleSmall)
                         Text(
-                            "Просмотреть крэш-логи",
-                            style = MaterialTheme.typography.titleSmall
-                        )
-                        Text(
-                            "Нажмите чтобы увидеть последние ошибки",
+                            "Последние ошибки приложения",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
-                    Icon(Icons.Filled.ChevronRight, contentDescription = null)
+                    Icon(Icons.Filled.ChevronRight, null)
                 }
             }
 
@@ -371,14 +322,11 @@ fun SettingsScreen(
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant
-                        .copy(alpha = 0.5f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
                 )
             ) {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                    modifier = Modifier.fillMaxWidth().padding(16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
@@ -389,8 +337,7 @@ fun SettingsScreen(
                     Text(
                         "Powered by Groq + LLaMA",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                            .copy(alpha = 0.6f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                     )
                 }
             }
@@ -399,7 +346,7 @@ fun SettingsScreen(
         }
     }
 
-    // Model picker dialog
+    // Model picker
     if (showModelPicker) {
         AlertDialog(
             onDismissRequest = { showModelPicker = false },
@@ -408,9 +355,7 @@ fun SettingsScreen(
                 Column {
                     availableModels.forEach { (id, name) ->
                         Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             RadioButton(
@@ -427,18 +372,45 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showModelPicker = false }) {
-                    Text("Закрыть")
-                }
+                TextButton(onClick = { showModelPicker = false }) { Text("Закрыть") }
             }
         )
     }
 
-        // Crash log dialog
+    // Language picker
+    if (showLanguagePicker) {
+        AlertDialog(
+            onDismissRequest = { showLanguagePicker = false },
+            title = { Text("Язык") },
+            text = {
+                Column {
+                    languages.forEach { (code, name) ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            RadioButton(
+                                selected = settings.voiceLanguage == code,
+                                onClick = {
+                                    viewModel.updateVoiceLanguage(code)
+                                    showLanguagePicker = false
+                                }
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLanguagePicker = false }) { Text("Закрыть") }
+            }
+        )
+    }
+
+    // Crash log dialog with copy button
     if (showCrashLog) {
-        val clipboardManager = context.getSystemService(
-            android.content.Context.CLIPBOARD_SERVICE
-        ) as android.content.ClipboardManager
+        val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
 
         AlertDialog(
             onDismissRequest = { showCrashLog = false },
@@ -458,35 +430,37 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TextButton(onClick = {
-                        val clip = android.content.ClipData.newPlainText(
-                            "crash_log",
-                            crashLogText
-                        )
-                        clipboardManager.setPrimaryClip(clip)
-                        android.widget.Toast.makeText(
-                            context,
-                            "Скопировано в буфер обмена",
-                            android.widget.Toast.LENGTH_SHORT
-                        ).show()
-                    }) {
-                        Text("📋 Копировать")
+                Column {
+                    TextButton(
+                        onClick = {
+                            val clip = ClipData.newPlainText("crash_log", crashLogText)
+                            clipboardManager.setPrimaryClip(clip)
+                            Toast.makeText(context, "Скопировано!", Toast.LENGTH_SHORT).show()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("📋 Копировать всё в буфер")
                     }
-                    TextButton(onClick = {
-                        try {
-                            File(context.filesDir, "crash_log.txt").delete()
-                            crashLogText = "Логи очищены ✅"
-                        } catch (e: Exception) {
-                            crashLogText = "Ошибка: ${e.message}"
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = {
+                            try {
+                                File(context.filesDir, "crash_log.txt").delete()
+                                crashLogText = "Логи очищены ✅"
+                            } catch (e: Exception) {
+                                crashLogText = "Ошибка: ${e.message}"
+                            }
+                        }) {
+                            Text("Очистить", color = ErrorRed)
                         }
-                    }) {
-                        Text("Очистить", color = ErrorRed)
-                    }
-                    TextButton(onClick = { showCrashLog = false }) {
-                        Text("Закрыть")
+                        TextButton(onClick = { showCrashLog = false }) {
+                            Text("Закрыть")
+                        }
                     }
                 }
             }
         )
     }
+}
