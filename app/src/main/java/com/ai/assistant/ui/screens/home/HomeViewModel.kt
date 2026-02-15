@@ -5,9 +5,9 @@ import android.content.Context
 import android.os.Build
 import android.provider.Settings
 import android.text.TextUtils
+import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.ai.assistant.domain.model.ActionPlan
 import com.ai.assistant.domain.model.CommandHistory
 import com.ai.assistant.domain.model.UiAction
 import com.ai.assistant.domain.repository.CommandHistoryRepository
@@ -21,6 +21,7 @@ import com.ai.assistant.ui.components.ActionStatus
 import com.ai.assistant.ui.components.ChatMessage
 import com.ai.assistant.ui.components.ServiceStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -38,6 +39,41 @@ class HomeViewModel @Inject constructor(
     private val historyRepository: CommandHistoryRepository,
     val voiceManager: VoiceRecognitionManager
 ) : AndroidViewModel(application) {
+
+    companion object {
+        private const val TAG = "HomeViewModel"
+
+        fun isAccessibilityServiceEnabled(
+            context: Context,
+            serviceClass: Class<*>
+        ): Boolean {
+            return try {
+                val expectedComponentName =
+                    "${context.packageName}/${serviceClass.canonicalName}"
+                val enabledServicesSetting = Settings.Secure.getString(
+                    context.contentResolver,
+                    Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+                ) ?: return false
+
+                val colonSplitter = TextUtils.SimpleStringSplitter(':')
+                colonSplitter.setString(enabledServicesSetting)
+                while (colonSplitter.hasNext()) {
+                    val componentName = colonSplitter.next()
+                    if (componentName.equals(
+                            expectedComponentName,
+                            ignoreCase = true
+                        )
+                    ) {
+                        return true
+                    }
+                }
+                false
+            } catch (e: Exception) {
+                Log.e(TAG, "Error checking accessibility", e)
+                false
+            }
+        }
+    }
 
     private val _textInput = MutableStateFlow("")
     val textInput: StateFlow<String> = _textInput.asStateFlow()
@@ -58,38 +94,55 @@ class HomeViewModel @Inject constructor(
     private val conversationHistory = mutableListOf<Pair<String, String>>()
 
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm")
+    private var messageIdCounter = 0L
 
     init {
         // Monitor accessibility service status
         viewModelScope.launch {
             AssistantAccessibilityService.isRunning.collect { running ->
-                _serviceStatus.value = if (running) ServiceStatus.CONNECTED else ServiceStatus.DISCONNECTED
+                _serviceStatus.value = if (running) {
+                    ServiceStatus.CONNECTED
+                } else {
+                    ServiceStatus.DISCONNECTED
+                }
             }
         }
 
         // Monitor API key
         viewModelScope.launch {
-            settingsRepository.settings.collect { settings ->
-                _hasApiKey.value = settings.groqApiKey.isNotBlank()
+            try {
+                settingsRepository.settings.collect { settings ->
+                    _hasApiKey.value = settings.groqApiKey.isNotBlank()
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error monitoring settings", e)
             }
         }
 
         // Monitor voice recognition results
         viewModelScope.launch {
-            voiceManager.recognizedText.filterNotNull().collect { text ->
-                _textInput.value = text
-                voiceManager.clearResults()
-                // Auto-send voice commands
-                processCommand(text)
-            }
+            voiceManager.recognizedText
+                .filterNotNull()
+                .collect { text ->
+                    _textInput.value = text
+                    voiceManager.clearResults()
+                    processCommand(text)
+                }
         }
 
-        // Add welcome message
-        addMessage(ChatMessage(
-            text = "👋 Привет! Я AI-ассистент. Скажи или напиши, что нужно сделать, и я выполню это за тебя.\n\nНапример:\n• \"Напиши маме в WhatsApp привет\"\n• \"Открой YouTube\"\n• \"Поставь таймер на 5 минут\"",
-            isUser = false,
-            timestamp = getCurrentTime()
-        ))
+        // Welcome message
+        addMessage(
+            ChatMessage(
+                text = "👋 Привет! Я AI-ассистент. Скажи или напиши, " +
+                        "что нужно сделать.\n\n" +
+                        "Например:\n" +
+                        "• \"Открой YouTube\"\n" +
+                        "• \"Напиши маме в WhatsApp привет\"\n" +
+                        "• \"Открой настройки Wi-Fi\"",
+                isUser = false,
+                timestamp = getCurrentTime()
+            )
+        )
     }
 
     fun updateTextInput(text: String) {
@@ -109,246 +162,410 @@ class HomeViewModel @Inject constructor(
             voiceManager.stopListening()
         } else {
             viewModelScope.launch {
-                val settings = settingsRepository.getSettings()
-                voiceManager.startListening(settings.voiceLanguage)
+                try {
+                    val settings = settingsRepository.getSettings()
+                    voiceManager.startListening(settings.voiceLanguage)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error starting voice", e)
+                    addMessage(
+                        ChatMessage(
+                            text = "❌ Не удалось запустить распознавание речи: ${e.message}",
+                            isUser = false,
+                            isAction = true,
+                            actionStatus = ActionStatus.FAILED,
+                            timestamp = getCurrentTime()
+                        )
+                    )
+                }
             }
         }
     }
 
     fun isAccessibilityEnabled(): Boolean {
-        return isAccessibilityServiceEnabled(application, AssistantAccessibilityService::class.java)
+        return isAccessibilityServiceEnabled(
+            application,
+            AssistantAccessibilityService::class.java
+        )
     }
 
     private fun processCommand(command: String) {
+        if (_isProcessing.value) return
+
         viewModelScope.launch {
             _isProcessing.value = true
             _serviceStatus.value = ServiceStatus.PROCESSING
             previousActions.clear()
+            conversationHistory.clear()
 
             val startTime = System.currentTimeMillis()
-
-            // Show user message
-            addMessage(ChatMessage(
-                text = command,
-                isUser = true,
-                timestamp = getCurrentTime()
-            ))
-
-            // Add "thinking" message
-            addMessage(ChatMessage(
-                text = "🤔 Анализирую команду...",
-                isUser = false,
-                isAction = true,
-                actionStatus = ActionStatus.IN_PROGRESS,
-                timestamp = getCurrentTime()
-            ))
-
-            val settings = settingsRepository.getSettings()
             var stepCount = 0
             var isComplete = false
             var lastError: String? = null
 
             try {
+                // Show user message
+                addMessage(
+                    ChatMessage(
+                        text = command,
+                        isUser = true,
+                        timestamp = getCurrentTime()
+                    )
+                )
+
+                // Check prerequisites
+                val settings = settingsRepository.getSettings()
+
+                if (settings.groqApiKey.isBlank()) {
+                    addMessage(
+                        ChatMessage(
+                            text = "❌ API ключ Groq не настроен. " +
+                                    "Перейдите в Настройки и укажите ключ.",
+                            isUser = false,
+                            isAction = true,
+                            actionStatus = ActionStatus.FAILED,
+                            timestamp = getCurrentTime()
+                        )
+                    )
+                    lastError = "API key not set"
+                    _isProcessing.value = false
+                    _serviceStatus.value = ServiceStatus.DISCONNECTED
+                    return@launch
+                }
+
+                if (!isAccessibilityEnabled()) {
+                    addMessage(
+                        ChatMessage(
+                            text = "❌ Служба специальных возможностей не включена. " +
+                                    "Включите её в настройках.",
+                            isUser = false,
+                            isAction = true,
+                            actionStatus = ActionStatus.FAILED,
+                            timestamp = getCurrentTime()
+                        )
+                    )
+                    lastError = "Accessibility not enabled"
+                    _isProcessing.value = false
+                    _serviceStatus.value = ServiceStatus.DISCONNECTED
+                    return@launch
+                }
+
+                // Show thinking indicator
+                addMessage(
+                    ChatMessage(
+                        text = "🤔 Анализирую команду...",
+                        isUser = false,
+                        isAction = true,
+                        actionStatus = ActionStatus.IN_PROGRESS,
+                        timestamp = getCurrentTime()
+                    )
+                )
+
                 while (!isComplete && stepCount < settings.maxStepsPerCommand) {
                     stepCount++
 
-                    // Small delay to let screen update
-                    delay(settings.actionDelayMs)
+                    // Delay to let screen update
+                    if (stepCount > 1) {
+                        delay(settings.actionDelayMs)
+                    }
 
-                    // Analyze current screen
-                    val currentScreen = analyzeScreenUseCase()
-                    val currentPackage = analyzeScreenUseCase.getCurrentPackage()
+                    // Analyze current screen safely
+                    val currentScreen = try {
+                        analyzeScreenUseCase()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Screen analysis failed", e)
+                        null
+                    }
+
+                    val currentPackage = try {
+                        analyzeScreenUseCase.getCurrentPackage()
+                    } catch (e: Exception) {
+                        null
+                    }
+
+                    Log.d(
+                        TAG,
+                        "Step $stepCount: package=$currentPackage, " +
+                                "hasScreen=${currentScreen != null}"
+                    )
 
                     // Ask AI for next action
-                    val planResult = planActionsUseCase(
-                        userCommand = command,
-                        currentScreen = currentScreen,
-                        currentPackage = currentPackage,
-                        previousActions = previousActions,
-                        conversationHistory = conversationHistory
-                    )
+                    val planResult = try {
+                        planActionsUseCase(
+                            userCommand = command,
+                            currentScreen = currentScreen,
+                            currentPackage = currentPackage,
+                            previousActions = previousActions.toList(),
+                            conversationHistory = conversationHistory.toList()
+                        )
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.e(TAG, "AI planning failed", e)
+                        Result.failure(e)
+                    }
 
                     planResult.fold(
                         onSuccess = { plan ->
-                            // Show reasoning
-                            if (plan.reasoning.isNotBlank() && settings.showDebugInfo) {
-                                addMessage(ChatMessage(
-                                    text = "💭 ${plan.reasoning}",
-                                    isUser = false,
-                                    timestamp = getCurrentTime()
-                                ))
+                            Log.d(TAG, "Plan: ${plan.reasoning}")
+
+                            // Show reasoning if debug
+                            if (plan.reasoning.isNotBlank() &&
+                                settings.showDebugInfo
+                            ) {
+                                addMessage(
+                                    ChatMessage(
+                                        text = "💭 ${plan.reasoning}",
+                                        isUser = false,
+                                        timestamp = getCurrentTime()
+                                    )
+                                )
                             }
 
                             // Execute actions
-                            val results = executeActionPlanUseCase(plan, settings.actionDelayMs)
+                            val results = try {
+                                executeActionPlanUseCase(
+                                    plan,
+                                    settings.actionDelayMs
+                                )
+                            } catch (e: CancellationException) {
+                                throw e
+                            } catch (e: Exception) {
+                                Log.e(TAG, "Execution failed", e)
+                                isComplete = true
+                                lastError = "Ошибка выполнения: ${e.message}"
+                                removeLastActionMessage()
+                                addMessage(
+                                    ChatMessage(
+                                        text = "❌ $lastError",
+                                        isUser = false,
+                                        isAction = true,
+                                        actionStatus = ActionStatus.FAILED,
+                                        timestamp = getCurrentTime()
+                                    )
+                                )
+                                emptyList()
+                            }
 
                             for (result in results) {
                                 when (result.action) {
                                     is UiAction.Done -> {
                                         isComplete = true
-                                        // Remove "thinking" and add success
                                         removeLastActionMessage()
-                                        addMessage(ChatMessage(
-                                            text = "✅ ${(result.action as UiAction.Done).message}",
-                                            isUser = false,
-                                            isAction = true,
-                                            actionStatus = ActionStatus.SUCCESS,
-                                            timestamp = getCurrentTime()
-                                        ))
+                                        addMessage(
+                                            ChatMessage(
+                                                text = "✅ ${
+                                                    (result.action as UiAction.Done)
+                                                        .message
+                                                }",
+                                                isUser = false,
+                                                isAction = true,
+                                                actionStatus = ActionStatus.SUCCESS,
+                                                timestamp = getCurrentTime()
+                                            )
+                                        )
                                     }
+
                                     is UiAction.Error -> {
                                         isComplete = true
-                                        lastError = (result.action as UiAction.Error).reason
+                                        lastError =
+                                            (result.action as UiAction.Error).reason
                                         removeLastActionMessage()
-                                        addMessage(ChatMessage(
-                                            text = "❌ ${lastError}",
-                                            isUser = false,
-                                            isAction = true,
-                                            actionStatus = ActionStatus.FAILED,
-                                            timestamp = getCurrentTime()
-                                        ))
+                                        addMessage(
+                                            ChatMessage(
+                                                text = "❌ $lastError",
+                                                isUser = false,
+                                                isAction = true,
+                                                actionStatus = ActionStatus.FAILED,
+                                                timestamp = getCurrentTime()
+                                            )
+                                        )
                                     }
+
                                     else -> {
                                         previousActions.add(result.description)
-                                        if (result.success) {
-                                            updateLastActionMessage(
-                                                "⚡ Шаг $stepCount: ${result.description}",
+                                        updateLastActionMessage(
+                                            "⚡ Шаг $stepCount: ${result.description}",
+                                            if (result.success) {
                                                 ActionStatus.IN_PROGRESS
-                                            )
-                                        } else {
-                                            updateLastActionMessage(
-                                                "⚠️ Шаг $stepCount не удался: ${result.description}",
+                                            } else {
                                                 ActionStatus.FAILED
+                                            }
+                                        )
+
+                                        if (!result.success) {
+                                            Log.w(
+                                                TAG,
+                                                "Step failed: ${result.description}"
                                             )
+                                            // Don't stop on failure,
+                                            // let AI decide
                                         }
                                     }
                                 }
                             }
 
                             // Store conversation context
-                            val screenDesc = currentScreen?.toCompactString()?.take(500) ?: "no screen"
+                            val screenDesc = currentScreen
+                                ?.toCompactString()
+                                ?.take(500) ?: "no screen"
                             conversationHistory.add(
-                                screenDesc to (planResult.getOrNull()?.reasoning ?: "")
+                                screenDesc to (plan.reasoning)
                             )
-                            // Keep only last 5 exchanges
                             if (conversationHistory.size > 5) {
                                 conversationHistory.removeAt(0)
                             }
                         },
                         onFailure = { error ->
+                            Log.e(TAG, "Plan failed", error)
                             isComplete = true
-                            lastError = error.message
+                            lastError = error.message ?: "Unknown error"
                             removeLastActionMessage()
-                            addMessage(ChatMessage(
-                                text = "❌ Ошибка AI: ${error.message}",
-                                isUser = false,
-                                isAction = true,
-                                actionStatus = ActionStatus.FAILED,
-                                timestamp = getCurrentTime()
-                            ))
+
+                            val errorMsg = when {
+                                lastError!!.contains("401") ||
+                                        lastError!!.contains("Unauthorized") ->
+                                    "❌ Неверный API ключ Groq. " +
+                                            "Проверьте ключ в настройках."
+
+                                lastError!!.contains("429") ||
+                                        lastError!!.contains("rate") ->
+                                    "❌ Превышен лимит запросов. " +
+                                            "Подождите минуту."
+
+                                lastError!!.contains("timeout") ||
+                                        lastError!!.contains("Timeout") ->
+                                    "❌ Таймаут запроса. " +
+                                            "Проверьте интернет."
+
+                                lastError!!.contains("Unable to resolve") ||
+                                        lastError!!.contains("network") ->
+                                    "❌ Нет подключения к интернету."
+
+                                else ->
+                                    "❌ Ошибка AI: $lastError"
+                            }
+
+                            addMessage(
+                                ChatMessage(
+                                    text = errorMsg,
+                                    isUser = false,
+                                    isAction = true,
+                                    actionStatus = ActionStatus.FAILED,
+                                    timestamp = getCurrentTime()
+                                )
+                            )
                         }
                     )
                 }
 
                 if (!isComplete) {
                     removeLastActionMessage()
-                    addMessage(ChatMessage(
-                        text = "⚠️ Достигнут лимит шагов ($stepCount). Задача может быть не завершена.",
+                    addMessage(
+                        ChatMessage(
+                            text = "⚠️ Достигнут лимит шагов ($stepCount). " +
+                                    "Задача может быть не завершена.",
+                            isUser = false,
+                            isAction = true,
+                            actionStatus = ActionStatus.FAILED,
+                            timestamp = getCurrentTime()
+                        )
+                    )
+                }
+
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "Unexpected error in processCommand", e)
+                lastError = e.message
+                addMessage(
+                    ChatMessage(
+                        text = "❌ Непредвиденная ошибка: ${e.message}",
                         isUser = false,
                         isAction = true,
                         actionStatus = ActionStatus.FAILED,
                         timestamp = getCurrentTime()
-                    ))
+                    )
+                )
+            } finally {
+                val duration = System.currentTimeMillis() - startTime
+
+                // Save to history safely
+                try {
+                    historyRepository.addEntry(
+                        CommandHistory(
+                            command = command,
+                            status = when {
+                                isComplete && lastError == null ->
+                                    CommandHistory.Status.SUCCESS
+
+                                lastError != null ->
+                                    CommandHistory.Status.FAILED
+
+                                else ->
+                                    CommandHistory.Status.PARTIAL
+                            },
+                            stepsCompleted = stepCount,
+                            totalSteps = stepCount,
+                            resultMessage = lastError ?: "Completed",
+                            timestamp = LocalDateTime.now(),
+                            durationMs = duration
+                        )
+                    )
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to save history", e)
                 }
 
-            } catch (e: Exception) {
-                lastError = e.message
-                removeLastActionMessage()
-                addMessage(ChatMessage(
-                    text = "❌ Ошибка: ${e.message}",
-                    isUser = false,
-                    isAction = true,
-                    actionStatus = ActionStatus.FAILED,
-                    timestamp = getCurrentTime()
-                ))
+                _isProcessing.value = false
+                _serviceStatus.value = if (isAccessibilityEnabled()) {
+                    ServiceStatus.CONNECTED
+                } else {
+                    ServiceStatus.DISCONNECTED
+                }
             }
-
-            val duration = System.currentTimeMillis() - startTime
-
-            // Save to history
-            historyRepository.addEntry(
-                CommandHistory(
-                    command = command,
-                    status = when {
-                        isComplete && lastError == null -> CommandHistory.Status.SUCCESS
-                        lastError != null -> CommandHistory.Status.FAILED
-                        else -> CommandHistory.Status.PARTIAL
-                    },
-                    stepsCompleted = stepCount,
-                    totalSteps = stepCount,
-                    resultMessage = lastError ?: "Completed",
-                    timestamp = LocalDateTime.now(),
-                    durationMs = duration
-                )
-            )
-
-            _isProcessing.value = false
-            _serviceStatus.value = if (isAccessibilityEnabled()) ServiceStatus.CONNECTED else ServiceStatus.DISCONNECTED
         }
     }
 
     private fun addMessage(message: ChatMessage) {
+        messageIdCounter++
         _messages.value = _messages.value + message
     }
 
     private fun removeLastActionMessage() {
-        _messages.value = _messages.value.toMutableList().apply {
-            val lastActionIndex = indexOfLast { it.isAction && !it.isUser }
-            if (lastActionIndex >= 0) removeAt(lastActionIndex)
+        val current = _messages.value.toMutableList()
+        val lastActionIndex = current.indexOfLast {
+            it.isAction && !it.isUser
+        }
+        if (lastActionIndex >= 0) {
+            current.removeAt(lastActionIndex)
+            _messages.value = current
         }
     }
 
     private fun updateLastActionMessage(newText: String, status: ActionStatus) {
-        _messages.value = _messages.value.toMutableList().apply {
-            val lastActionIndex = indexOfLast { it.isAction && !it.isUser }
-            if (lastActionIndex >= 0) {
-                this[lastActionIndex] = this[lastActionIndex].copy(
-                    text = newText,
-                    actionStatus = status
-                )
-            } else {
-                add(ChatMessage(
+        val current = _messages.value.toMutableList()
+        val lastActionIndex = current.indexOfLast {
+            it.isAction && !it.isUser
+        }
+        if (lastActionIndex >= 0) {
+            current[lastActionIndex] = current[lastActionIndex].copy(
+                text = newText,
+                actionStatus = status
+            )
+            _messages.value = current
+        } else {
+            addMessage(
+                ChatMessage(
                     text = newText,
                     isUser = false,
                     isAction = true,
                     actionStatus = status,
                     timestamp = getCurrentTime()
-                ))
-            }
+                )
+            )
         }
     }
 
     private fun getCurrentTime(): String {
         return LocalDateTime.now().format(timeFormatter)
-    }
-
-    companion object {
-        fun isAccessibilityServiceEnabled(context: Context, serviceClass: Class<*>): Boolean {
-            val expectedComponentName = "${context.packageName}/${serviceClass.canonicalName}"
-            val enabledServicesSetting = Settings.Secure.getString(
-                context.contentResolver,
-                Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
-            ) ?: return false
-            
-            val colonSplitter = TextUtils.SimpleStringSplitter(':')
-            colonSplitter.setString(enabledServicesSetting)
-            while (colonSplitter.hasNext()) {
-                val componentName = colonSplitter.next()
-                if (componentName.equals(expectedComponentName, ignoreCase = true)) {
-                    return true
-                }
-            }
-            return false
-        }
     }
 }
