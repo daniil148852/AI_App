@@ -1,19 +1,58 @@
 package com.ai.assistant.ui.screens.settings
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Slider
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.ai.assistant.ui.theme.ErrorRed
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -21,9 +60,12 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = hiltViewModel()
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val context = LocalContext.current
     var showApiKey by remember { mutableStateOf(false) }
     var apiKeyInput by remember(settings.groqApiKey) { mutableStateOf(settings.groqApiKey) }
     var showModelPicker by remember { mutableStateOf(false) }
+    var showCrashLog by remember { mutableStateOf(false) }
+    var crashLogText by remember { mutableStateOf("") }
 
     val availableModels = listOf(
         "llama-3.3-70b-versatile" to "LLaMA 3.3 70B (рекомендуется)",
@@ -46,9 +88,7 @@ fun SettingsScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("Настройки") }
-            )
+            TopAppBar(title = { Text("Настройки") })
         }
     ) { padding ->
         Column(
@@ -59,7 +99,7 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // ═══════════════════ API Settings ═══════════════════
+            // API Settings
             Text(
                 "API Настройки",
                 style = MaterialTheme.typography.titleMedium,
@@ -90,9 +130,7 @@ fun SettingsScreen(
                         }
                     }
                 },
-                supportingText = {
-                    Text("Получите ключ на console.groq.com")
-                },
+                supportingText = { Text("Получите ключ на console.groq.com") },
                 singleLine = true
             )
 
@@ -123,7 +161,7 @@ fun SettingsScreen(
 
             Divider()
 
-            // ═══════════════════ Voice Settings ═══════════════════
+            // Voice
             Text(
                 "Голос",
                 style = MaterialTheme.typography.titleMedium,
@@ -193,7 +231,7 @@ fun SettingsScreen(
 
             Divider()
 
-            // ═══════════════════ Execution Settings ═══════════════════
+            // Execution
             Text(
                 "Выполнение",
                 style = MaterialTheme.typography.titleMedium,
@@ -223,11 +261,6 @@ fun SettingsScreen(
                     "Максимум шагов: ${settings.maxStepsPerCommand}",
                     style = MaterialTheme.typography.titleSmall
                 )
-                Text(
-                    "Предел шагов на одну команду",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
                 Slider(
                     value = settings.maxStepsPerCommand.toFloat(),
                     onValueChange = { viewModel.updateMaxSteps(it.toInt()) },
@@ -238,13 +271,8 @@ fun SettingsScreen(
 
             Column {
                 Text(
-                    "Задержка между действиями: ${settings.actionDelayMs}мс",
+                    "Задержка: ${settings.actionDelayMs}мс",
                     style = MaterialTheme.typography.titleSmall
-                )
-                Text(
-                    "Больше значение = надёжнее, но медленнее",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Slider(
                     value = settings.actionDelayMs.toFloat(),
@@ -256,7 +284,7 @@ fun SettingsScreen(
 
             Divider()
 
-            // ═══════════════════ Debug ═══════════════════
+            // Debug
             Text(
                 "Отладка",
                 style = MaterialTheme.typography.titleMedium,
@@ -268,12 +296,9 @@ fun SettingsScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Column(Modifier.weight(1f)) {
+                    Text("Debug-информация", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "Показывать debug-информацию",
-                        style = MaterialTheme.typography.titleSmall
-                    )
-                    Text(
-                        "Рассуждения AI, дерево экрана",
+                        "Рассуждения AI",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -290,11 +315,6 @@ fun SettingsScreen(
             ) {
                 Column(Modifier.weight(1f)) {
                     Text("Вибрация", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Тактильная обратная связь при действиях",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
                 Switch(
                     checked = settings.hapticFeedback,
@@ -302,12 +322,57 @@ fun SettingsScreen(
                 )
             }
 
+            // Crash log viewer
+            OutlinedCard(
+                onClick = {
+                    crashLogText = try {
+                        val file = File(context.filesDir, "crash_log.txt")
+                        if (file.exists()) {
+                            file.readText().takeLast(3000)
+                        } else {
+                            "Крэшей не зафиксировано ✅"
+                        }
+                    } catch (e: Exception) {
+                        "Ошибка чтения: ${e.message}"
+                    }
+                    showCrashLog = true
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Filled.BugReport,
+                        contentDescription = null,
+                        tint = ErrorRed
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            "Просмотреть крэш-логи",
+                            style = MaterialTheme.typography.titleSmall
+                        )
+                        Text(
+                            "Нажмите чтобы увидеть последние ошибки",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(Icons.Filled.ChevronRight, contentDescription = null)
+                }
+            }
+
             Spacer(Modifier.height(32.dp))
 
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        .copy(alpha = 0.5f)
                 )
             ) {
                 Column(
@@ -324,7 +389,8 @@ fun SettingsScreen(
                     Text(
                         "Powered by Groq + LLaMA",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                            .copy(alpha = 0.6f)
                     )
                 }
             }
@@ -363,6 +429,45 @@ fun SettingsScreen(
             confirmButton = {
                 TextButton(onClick = { showModelPicker = false }) {
                     Text("Закрыть")
+                }
+            }
+        )
+    }
+
+    // Crash log dialog
+    if (showCrashLog) {
+        AlertDialog(
+            onDismissRequest = { showCrashLog = false },
+            title = { Text("Крэш-логи") },
+            text = {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = crashLogText,
+                        fontSize = 10.sp,
+                        lineHeight = 14.sp,
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    )
+                }
+            },
+            confirmButton = {
+                Row {
+                    TextButton(onClick = {
+                        try {
+                            File(context.filesDir, "crash_log.txt").delete()
+                            crashLogText = "Логи очищены ✅"
+                        } catch (e: Exception) {
+                            crashLogText = "Ошибка: ${e.message}"
+                        }
+                    }) {
+                        Text("Очистить", color = ErrorRed)
+                    }
+                    TextButton(onClick = { showCrashLog = false }) {
+                        Text("Закрыть")
+                    }
                 }
             }
         )
