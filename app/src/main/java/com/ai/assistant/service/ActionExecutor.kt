@@ -7,7 +7,6 @@ import android.content.Intent
 import android.graphics.Path
 import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
-import com.ai.assistant.domain.model.ScreenNode
 import com.ai.assistant.domain.model.UiAction
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CompletableDeferred
@@ -16,10 +15,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Executes UI actions via the AccessibilityService.
- * Translates our UiAction model into actual Android accessibility API calls.
- */
 @Singleton
 class ActionExecutor @Inject constructor(
     @ApplicationContext private val context: Context,
@@ -40,7 +35,10 @@ class ActionExecutor @Inject constructor(
             is UiAction.Scroll -> executeScroll(svc, action)
             is UiAction.PressButton -> executePressButton(svc, action)
             is UiAction.OpenApp -> executeOpenApp(action)
-            is UiAction.Wait -> { delay(action.milliseconds); true }
+            is UiAction.Wait -> {
+                delay(action.milliseconds)
+                true
+            }
             is UiAction.Swipe -> executeSwipe(svc, action)
             is UiAction.Done -> true
             is UiAction.Error -> false
@@ -72,14 +70,14 @@ class ActionExecutor @Inject constructor(
             ?: return false
 
         return try {
-            // Focus the node first
             node.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
             node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
 
-            // Set text
             val args = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                    (node.text?.toString() ?: "") + action.text)
+                putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    (node.text?.toString() ?: "") + action.text
+                )
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         } finally {
@@ -96,7 +94,10 @@ class ActionExecutor @Inject constructor(
             node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
 
             val args = Bundle().apply {
-                putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, action.text)
+                putCharSequence(
+                    AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
+                    action.text
+                )
             }
             node.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
         } finally {
@@ -129,17 +130,22 @@ class ActionExecutor @Inject constructor(
                 findFirstScrollable(root)
             }
 
-            scrollable?.let { node ->
+            if (scrollable != null) {
                 val scrollAction = when (action.direction) {
-                    UiAction.ScrollDirection.DOWN, UiAction.ScrollDirection.RIGHT ->
+                    UiAction.ScrollDirection.DOWN,
+                    UiAction.ScrollDirection.RIGHT ->
                         AccessibilityNodeInfo.ACTION_SCROLL_FORWARD
-                    UiAction.ScrollDirection.UP, UiAction.ScrollDirection.LEFT ->
+
+                    UiAction.ScrollDirection.UP,
+                    UiAction.ScrollDirection.LEFT ->
                         AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD
                 }
-                val result = node.performAction(scrollAction)
-                node.recycle()
+                val result = scrollable.performAction(scrollAction)
+                scrollable.recycle()
                 result
-            } ?: false
+            } else {
+                false
+            }
         } finally {
             root.recycle()
         }
@@ -157,8 +163,9 @@ class ActionExecutor @Inject constructor(
 
     private fun executeOpenApp(action: UiAction.OpenApp): Boolean {
         return try {
-            val packageName = action.packageName ?: resolvePackageName(action.appName ?: return false)
-            ?: return false
+            val packageName = action.packageName
+                ?: resolvePackageName(action.appName ?: return false)
+                ?: return false
 
             val intent = context.packageManager.getLaunchIntentForPackage(packageName)
                 ?: return false
@@ -187,6 +194,7 @@ class ActionExecutor @Inject constructor(
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 deferred.complete(true)
             }
+
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 deferred.complete(false)
             }
@@ -195,9 +203,9 @@ class ActionExecutor @Inject constructor(
         return withTimeoutOrNull(5000) { deferred.await() } ?: false
     }
 
-    // ═══════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════
     // Node finding utilities
-    // ═══════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════
 
     private fun findNode(
         svc: AccessibilityService,
@@ -208,48 +216,51 @@ class ActionExecutor @Inject constructor(
     ): AccessibilityNodeInfo? {
         val root = svc.rootInActiveWindow ?: return null
 
-        return try {
-            // Try by resource ID first (most reliable)
-            nodeId?.let { id ->
-                val nodes = root.findAccessibilityNodeInfosByViewId(id)
-                if (!nodes.isNullOrEmpty()) return nodes[0]
+        // Try by resource ID first (most reliable)
+        if (nodeId != null) {
+            val nodes = root.findAccessibilityNodeInfosByViewId(nodeId)
+            if (!nodes.isNullOrEmpty()) return nodes[0]
 
-                // Try with common prefixes
-                val fullId = if (!id.contains(":id/")) {
-                    val pkg = root.packageName?.toString() ?: return@let null
-                    "$pkg:id/$id"
-                } else id
-                val nodesById = root.findAccessibilityNodeInfosByViewId(fullId)
-                if (!nodesById.isNullOrEmpty()) return nodesById[0]
-            }
-
-            // Try by text
-            nodeText?.let { text ->
-                val nodes = root.findAccessibilityNodeInfosByText(text)
-                if (!nodes.isNullOrEmpty()) {
-                    // Return the most specific (clickable) match
-                    return nodes.firstOrNull { it.isClickable }
-                        ?: nodes.firstOrNull { findClickableParent(it) != null }?.let { findClickableParent(it) }
-                        ?: nodes[0]
+            // Try with package prefix
+            if (!nodeId.contains(":id/")) {
+                val pkg = root.packageName?.toString()
+                if (pkg != null) {
+                    val fullId = "$pkg:id/$nodeId"
+                    val nodesById = root.findAccessibilityNodeInfosByViewId(fullId)
+                    if (!nodesById.isNullOrEmpty()) return nodesById[0]
                 }
             }
-
-            // Try by content description
-            nodeDescription?.let { desc ->
-                val found = findNodeByContentDescription(root, desc)
-                if (found != null) return found
-            }
-
-            // Try by index (least reliable but always works)
-            nodeIndex?.let { index ->
-                return findNodeByIndex(root, index)
-            }
-
-            null
-        } catch (e: Exception) {
-            null
         }
-        // Don't recycle root here — the found node may reference it
+
+        // Try by text
+        if (nodeText != null) {
+            val nodes = root.findAccessibilityNodeInfosByText(nodeText)
+            if (!nodes.isNullOrEmpty()) {
+                val clickable = nodes.firstOrNull { it.isClickable }
+                if (clickable != null) return clickable
+
+                val withParent = nodes.firstOrNull { findClickableParent(it) != null }
+                if (withParent != null) {
+                    val parent = findClickableParent(withParent)
+                    if (parent != null) return parent
+                }
+
+                return nodes[0]
+            }
+        }
+
+        // Try by content description
+        if (nodeDescription != null) {
+            val found = findNodeByContentDescription(root, nodeDescription)
+            if (found != null) return found
+        }
+
+        // Try by index
+        if (nodeIndex != null) {
+            return findNodeByIndex(root, nodeIndex)
+        }
+
+        return null
     }
 
     private fun findEditableNode(
@@ -259,26 +270,26 @@ class ActionExecutor @Inject constructor(
     ): AccessibilityNodeInfo? {
         val root = svc.rootInActiveWindow ?: return null
 
-        return try {
-            // By ID
-            nodeId?.let { id ->
-                val fullId = if (!id.contains(":id/")) {
-                    "${root.packageName}:id/$id"
-                } else id
-                val nodes = root.findAccessibilityNodeInfosByViewId(fullId)
-                nodes?.firstOrNull { it.isEditable }?.let { return it }
+        // By ID
+        if (nodeId != null) {
+            val fullId = if (!nodeId.contains(":id/")) {
+                "${root.packageName}:id/$nodeId"
+            } else {
+                nodeId
             }
-
-            // By index
-            nodeIndex?.let { index ->
-                findNodeByIndex(root, index)?.takeIf { it.isEditable }?.let { return it }
-            }
-
-            // Fallback: find any focused or editable field
-            findFirstEditable(root)
-        } catch (e: Exception) {
-            null
+            val nodes = root.findAccessibilityNodeInfosByViewId(fullId)
+            val editable = nodes?.firstOrNull { it.isEditable }
+            if (editable != null) return editable
         }
+
+        // By index
+        if (nodeIndex != null) {
+            val node = findNodeByIndex(root, nodeIndex)
+            if (node != null && node.isEditable) return node
+        }
+
+        // Fallback: find any editable field
+        return findFirstEditable(root)
     }
 
     private var indexCounter = 0
@@ -288,7 +299,10 @@ class ActionExecutor @Inject constructor(
         return findNodeByIndexRecursive(root, targetIndex)
     }
 
-    private fun findNodeByIndexRecursive(node: AccessibilityNodeInfo, targetIndex: Int): AccessibilityNodeInfo? {
+    private fun findNodeByIndexRecursive(
+        node: AccessibilityNodeInfo,
+        targetIndex: Int
+    ): AccessibilityNodeInfo? {
         val currentIndex = indexCounter++
         if (currentIndex == targetIndex) return node
 
@@ -304,7 +318,9 @@ class ActionExecutor @Inject constructor(
         node: AccessibilityNodeInfo,
         description: String
     ): AccessibilityNodeInfo? {
-        if (node.contentDescription?.toString()?.contains(description, ignoreCase = true) == true) {
+        if (node.contentDescription?.toString()
+                ?.contains(description, ignoreCase = true) == true
+        ) {
             return node
         }
         for (i in 0 until node.childCount) {
@@ -348,10 +364,8 @@ class ActionExecutor @Inject constructor(
     }
 
     private fun resolvePackageName(appName: String): String? {
-        val pm = context.packageManager
         val lowerName = appName.lowercase()
 
-        // Common app name mappings
         val knownApps = mapOf(
             "whatsapp" to "com.whatsapp",
             "вотсап" to "com.whatsapp",
@@ -384,15 +398,20 @@ class ActionExecutor @Inject constructor(
             "clock" to "com.google.android.deskclock"
         )
 
-        // Check known apps first
-        knownApps.entries.firstOrNull { lowerName.contains(it.key) }?.let { return it.value }
+        knownApps.entries.firstOrNull { lowerName.contains(it.key) }?.let {
+            return it.value
+        }
 
         // Search installed apps
-        val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-        val apps = pm.queryIntentActivities(intent, 0)
-
-        return apps.firstOrNull { resolveInfo ->
-            resolveInfo.loadLabel(pm).toString().contains(appName, ignoreCase = true)
-        }?.activityInfo?.packageName
+        return try {
+            val pm = context.packageManager
+            val intent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            val apps = pm.queryIntentActivities(intent, 0)
+            apps.firstOrNull { resolveInfo ->
+                resolveInfo.loadLabel(pm).toString().contains(appName, ignoreCase = true)
+            }?.activityInfo?.packageName
+        } catch (e: Exception) {
+            null
+        }
     }
 }
