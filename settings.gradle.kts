@@ -1,4 +1,4 @@
-dependencyResolution {
+dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
@@ -16,4 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "AI-Phone-Assistant"
 include(":app")
+
 
