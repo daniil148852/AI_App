@@ -1,6 +1,5 @@
 package com.ai.assistant.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -9,13 +8,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ai.assistant.ui.theme.*
 
 data class ChatMessage(
+    val id: Long = System.nanoTime(),
     val text: String,
     val isUser: Boolean,
     val isAction: Boolean = false,
@@ -39,7 +38,6 @@ fun ChatBubble(
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
     ) {
         if (!isUser) {
-            // Assistant avatar
             Surface(
                 modifier = Modifier
                     .size(32.dp)
