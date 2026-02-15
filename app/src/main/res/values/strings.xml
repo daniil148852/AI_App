@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AI Assistant</string>
+    <string name="accessibility_service_description">
+        AI Phone Assistant использует службу специальных возможностей для чтения содержимого экрана
+        и выполнения действий в приложениях от вашего имени. Это необходимо для автоматизации задач,
+        таких как отправка сообщений, открытие приложений и навигация по интерфейсу.
+        Ваши данные не передаются третьим лицам кроме AI-провайдера для обработки команд.
+    </string>
+    <string name="home">Главная</string>
+    <string name="history">История</string>
+    <string name="settings">Настройки</string>
+</resources>
