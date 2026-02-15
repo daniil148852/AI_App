@@ -434,8 +434,12 @@ fun SettingsScreen(
         )
     }
 
-    // Crash log dialog
+        // Crash log dialog
     if (showCrashLog) {
+        val clipboardManager = context.getSystemService(
+            android.content.Context.CLIPBOARD_SERVICE
+        ) as android.content.ClipboardManager
+
         AlertDialog(
             onDismissRequest = { showCrashLog = false },
             title = { Text("Крэш-логи") },
@@ -454,7 +458,21 @@ fun SettingsScreen(
                 }
             },
             confirmButton = {
-                Row {
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TextButton(onClick = {
+                        val clip = android.content.ClipData.newPlainText(
+                            "crash_log",
+                            crashLogText
+                        )
+                        clipboardManager.setPrimaryClip(clip)
+                        android.widget.Toast.makeText(
+                            context,
+                            "Скопировано в буфер обмена",
+                            android.widget.Toast.LENGTH_SHORT
+                        ).show()
+                    }) {
+                        Text("📋 Копировать")
+                    }
                     TextButton(onClick = {
                         try {
                             File(context.filesDir, "crash_log.txt").delete()
@@ -472,4 +490,3 @@ fun SettingsScreen(
             }
         )
     }
-}
